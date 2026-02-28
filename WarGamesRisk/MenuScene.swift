@@ -38,7 +38,7 @@ class MenuScene: SKScene {
         border.fillColor = .clear; border.zPosition = 1
         addChild(border)
 
-        // Phase 0: WOPR boot text
+        // Phase 0: WOPR boot text (centered higher)
         let lines = [
             "LOGON: Joshua",
             "",
@@ -48,8 +48,9 @@ class MenuScene: SKScene {
         ]
 
         var delay: TimeInterval = 0.5
+        let baseY = size.height * 0.80  // Moved up from 0.72
         for (i, text) in lines.enumerated() {
-            let y = size.height * 0.72 - CGFloat(i) * 32
+            let y = baseY - CGFloat(i) * 32
             run(.wait(forDuration: delay)) { [weak self] in
                 self?.addTerminalLine(text, y: y, color: WG.textGreen)
                 // Speak "Greetings, Professor Falken"
@@ -60,7 +61,7 @@ class MenuScene: SKScene {
             delay += text.isEmpty ? 0.3 : 0.6 + Double(text.count) * 0.03
         }
 
-        // Phase 1: Game list
+        // Phase 1: Game list (centered better)
         let games = [
             "  1. CHESS",
             "  2. CHECKERS",
@@ -68,8 +69,9 @@ class MenuScene: SKScene {
             "  4. GLOBAL THERMONUCLEAR WAR",
         ]
         delay += 1.0
+        let gamesBaseY = size.height * 0.55  // Moved up from 0.42
         for (i, text) in games.enumerated() {
-            let y = size.height * 0.42 - CGFloat(i) * 28
+            let y = gamesBaseY - CGFloat(i) * 28
             run(.wait(forDuration: delay)) { [weak self] in
                 let color = i == 3 ? WG.textAmber : WG.textGreen
                 self?.addTerminalLine(text, y: y, color: color)
@@ -81,7 +83,7 @@ class MenuScene: SKScene {
         delay += 0.8
         run(.wait(forDuration: delay)) { [weak self] in
             guard let self = self else { return }
-            let sel = self.addTerminalLine("> GLOBAL THERMONUCLEAR WAR", y: self.size.height * 0.28, color: WG.textAmber)
+            let sel = self.addTerminalLine("> GLOBAL THERMONUCLEAR WAR", y: self.size.height * 0.42, color: WG.textAmber)
             sel.run(.repeatForever(.sequence([.fadeAlpha(to: 0.5, duration: 0.4), .fadeAlpha(to: 1, duration: 0.4)])))
         }
 
@@ -105,16 +107,32 @@ class MenuScene: SKScene {
     }
 
     private func showFactionChoice() {
-        _ = addTerminalLine("WHICH SIDE DO YOU WANT?", y: size.height * 0.24, color: WG.textCyan)
+        // Create centered label instead of left-aligned
+        let whichSideLabel = SKLabelNode(fontNamed: WG.fontMono)
+        whichSideLabel.text = "WHICH SIDE DO YOU WANT?"
+        whichSideLabel.fontSize = 20
+        whichSideLabel.fontColor = WG.textCyan
+        whichSideLabel.horizontalAlignmentMode = .center
+        whichSideLabel.position = CGPoint(x: size.width * 0.65, y: size.height * 0.58)
+        whichSideLabel.alpha = 0
+        whichSideLabel.zPosition = 10
+        addChild(whichSideLabel)
+        whichSideLabel.run(.fadeIn(withDuration: 0.2))
 
-        _ = makeButton("NATO", y: size.height * 0.17, color: WG.usaColor, name: "btn_nato")
-        _ = makeButton("WARSAW PACT", y: size.height * 0.11, color: WG.ussrColor, name: "btn_warsaw")
-        _ = makeButton("NON-ALIGNED", y: size.height * 0.05, color: WG.nonAlignedColor, name: "btn_nam")
+        let buttonSpacing: CGFloat = 50  // Space between buttons
+        let centerY = size.height * 0.38  // Center the button block vertically
+        let centerX = size.width * 0.65  // Position buttons more to the right
+        
+        // All 4 buttons grouped together, centered on right side
+        _ = makeButton("NATO", x: centerX, y: centerY + buttonSpacing * 1.5, color: WG.usaColor, name: "btn_nato")
+        _ = makeButton("WARSAW PACT", x: centerX, y: centerY + buttonSpacing * 0.5, color: WG.ussrColor, name: "btn_warsaw")
+        _ = makeButton("NON-ALIGNED", x: centerX, y: centerY - buttonSpacing * 0.5, color: WG.nonAlignedColor, name: "btn_nam")
+        _ = makeButton("QUIT", x: centerX, y: centerY - buttonSpacing * 1.5, color: WG.textGreen.withAlphaComponent(0.8), name: "btn_quit")
     }
 
-    private func makeButton(_ text: String, y: CGFloat, color: NSColor, name: String) -> SKNode {
+    private func makeButton(_ text: String, x: CGFloat, y: CGFloat, color: NSColor, name: String) -> SKNode {
         let container = SKNode()
-        container.position = CGPoint(x: size.width / 2, y: y)
+        container.position = CGPoint(x: x, y: y)
         container.name = name; container.zPosition = 10
         addChild(container)
 
@@ -149,6 +167,9 @@ class MenuScene: SKScene {
             if node.name == "btn_nam" || node.parent?.name == "btn_nam" {
                 launchGame(faction: .nonAligned); return
             }
+            if node.name == "btn_quit" || node.parent?.name == "btn_quit" {
+                quitGame(); return
+            }
         }
     }
 
@@ -176,8 +197,32 @@ class MenuScene: SKScene {
         case 18: launchGame(faction: .nato)  // '1'
         case 19: launchGame(faction: .warsaw) // '2'
         case 20: launchGame(faction: .nonAligned) // '3'
+        case 53: quitGame() // ESC key
         default: break
         }
+    }
+    
+    // MARK: - Game Actions
+    
+    private func quitGame() {
+        // Terminal-style shutdown message
+        let shutdownMsg = SKLabelNode(fontNamed: WG.fontMono)
+        shutdownMsg.text = "SYSTEM SHUTDOWN INITIATED..."
+        shutdownMsg.fontSize = 24
+        shutdownMsg.fontColor = WG.textAmber
+        shutdownMsg.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        shutdownMsg.alpha = 0
+        shutdownMsg.zPosition = 1000
+        addChild(shutdownMsg)
+        
+        shutdownMsg.run(.sequence([
+            .fadeIn(withDuration: 0.3),
+            .wait(forDuration: 0.5),
+            .fadeOut(withDuration: 0.3),
+            .run {
+                NSApplication.shared.terminate(nil)
+            }
+        ]))
     }
     
     // MARK: - Text to Speech
