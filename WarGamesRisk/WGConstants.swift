@@ -8,10 +8,10 @@ struct WG {
     static let sceneW: CGFloat = 1280
     static let sceneH: CGFloat = 800
 
-    // Map area (inside the "screen" frame)
-    static let mapX: CGFloat = 40
+    // Map area (inside the "screen" frame) - use almost full screen
+    static let mapX: CGFloat = 20
     static let mapY: CGFloat = 60
-    static let mapW: CGFloat = 1200
+    static let mapW: CGFloat = 1240
     static let mapH: CGFloat = 620
 
     // NORAD CRT Colors

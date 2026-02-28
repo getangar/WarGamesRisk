@@ -19,6 +19,10 @@ class GameModel {
     var turnNumber: Int = 1
     var winner: Faction? = nil
     var activePlayers: [Faction] // Players still in the game
+    
+    // Special Attack tracking
+    var specialAttacksAvailable: [Faction: Int] = [:] // Number of special attacks available per faction
+    var lastSpecialAttackTurn: [Faction: Int] = [:]   // Last turn a special attack was used
 
     // Combat log
     var lastAttackResult: AttackResult?
@@ -53,6 +57,12 @@ class GameModel {
 
         // Calculate initial reinforcements
         reinforcements = calcReinforcements(for: currentPlayer)
+        
+        // Initialize special attacks - everyone gets 1 at start
+        for faction in Faction.allCases {
+            specialAttacksAvailable[faction] = 1
+            lastSpecialAttackTurn[faction] = 0
+        }
     }
     
     // MARK: - Cold War Territory Assignment
@@ -222,10 +232,197 @@ class GameModel {
         // Increment turn when we cycle back to first player
         if nextIndex == 0 {
             turnNumber += 1
+            
+            // Grant special attack: turn 11, 21, 31, etc (every 10 turns after turn 1)
+            if turnNumber > 1 && turnNumber % 10 == 1 {
+                for faction in Faction.allCases {
+                    specialAttacksAvailable[faction, default: 0] += 1
+                }
+            }
         }
         
         reinforcements = calcReinforcements(for: currentPlayer)
         phase = .reinforce
+    }
+    
+    // MARK: - Special Attack (Regional Massive Strike)
+    
+    func canSpecialAttack(from: Int, to: Int) -> Bool {
+        guard phase == .attack else { return false }
+        guard owner[from] == currentPlayer else { return false }
+        guard owner[to] != currentPlayer else { return false }
+        guard adjacency[from].contains(to) else { return false }
+        guard (specialAttacksAvailable[currentPlayer] ?? 0) > 0 else { return false }
+        
+        // Check if we have enough troops in the attacking region
+        let attackingRegion = getConnectedRegion(from: from, continent: defs[from].continent, faction: currentPlayer)
+        let totalAttackTroops = attackingRegion.reduce(0) { $0 + max(0, troops[$1] - 1) }
+        guard totalAttackTroops >= 1 else { return false }
+        
+        return true
+    }
+    
+    /// Regional Massive Strike: All territories in the attacker's continent strike all territories in the defender's continent
+    /// Example: If attacking from CAME (North America) to VNZL (South America),
+    /// all North American territories attack all South American territories
+    func specialAttack(from: Int, to: Int) -> AttackResult? {
+        guard canSpecialAttack(from: from, to: to) else { return nil }
+        
+        // Use the special attack
+        specialAttacksAvailable[currentPlayer, default: 0] -= 1
+        lastSpecialAttackTurn[currentPlayer] = turnNumber
+        
+        // Get attacking region: all connected friendly territories in the same continent
+        let attackingContinent = defs[from].continent
+        let attackingRegion = getConnectedRegion(from: from, continent: attackingContinent, faction: currentPlayer)
+        
+        // Get defending region: all connected enemy territories in the target's continent
+        let defendingContinent = defs[to].continent
+        let defendingRegion = getConnectedRegion(from: to, continent: defendingContinent, faction: owner[to])
+        
+        // Calculate total attacking power (all troops minus 1 per territory)
+        var attackingPower: [Int: Int] = [:]  // territoryID: troops available to attack
+        for tid in attackingRegion {
+            attackingPower[tid] = max(0, troops[tid] - 1)
+        }
+        let totalAttackTroops = attackingPower.values.reduce(0, +)
+        
+        // Distribute attacking troops across defending territories
+        let troopsPerDefender = max(1, totalAttackTroops / defendingRegion.count)
+        
+        var totalAtkLoss = 0
+        var totalDefLoss = 0
+        var conqueredTerritories: [Int] = []
+        var allAttackDice: [Int] = []
+        var allDefendDice: [Int] = []
+        
+        // Attack each defending territory
+        for defenderID in defendingRegion {
+            let defendingTroops = troops[defenderID]
+            var remainingAttackers = troopsPerDefender
+            var remainingDefenders = defendingTroops
+            
+            // Combat rounds for this territory
+            while remainingAttackers > 0 && remainingDefenders > 0 {
+                let atkDiceCount = min(3, remainingAttackers)
+                let defDiceCount = min(2, remainingDefenders)
+                
+                let atkDice = (0..<atkDiceCount).map { _ in Int.random(in: 1...6) }.sorted(by: >)
+                let defDice = (0..<defDiceCount).map { _ in Int.random(in: 1...6) }.sorted(by: >)
+                
+                allAttackDice.append(contentsOf: atkDice)
+                allDefendDice.append(contentsOf: defDice)
+                
+                let comparisons = min(atkDice.count, defDice.count)
+                for i in 0..<comparisons {
+                    if atkDice[i] > defDice[i] {
+                        remainingDefenders -= 1
+                        totalDefLoss += 1
+                    } else {
+                        remainingAttackers -= 1
+                        totalAtkLoss += 1
+                    }
+                }
+            }
+            
+            // Apply losses to defending territory
+            let defLoss = defendingTroops - remainingDefenders
+            troops[defenderID] -= defLoss
+            
+            // Check if conquered
+            if troops[defenderID] <= 0 || remainingDefenders <= 0 {
+                conqueredTerritories.append(defenderID)
+                owner[defenderID] = currentPlayer
+                troops[defenderID] = 1  // Place 1 troop
+            }
+        }
+        
+        // Apply attack losses proportionally across attacking territories
+        distributeAttackLosses(attackingRegion: attackingRegion, attackingPower: attackingPower, totalLosses: totalAtkLoss)
+        
+        // Main target result (for display)
+        let conquered = conqueredTerritories.contains(to)
+        
+        let result = AttackResult(fromID: from, toID: to,
+                                   attackDice: Array(allAttackDice.prefix(6)),
+                                   defendDice: Array(allDefendDice.prefix(4)),
+                                   attackLoss: totalAtkLoss,
+                                   defendLoss: totalDefLoss,
+                                   conquered: conquered)
+        lastAttackResult = result
+        
+        // Check win
+        if owner.allSatisfy({ $0 == currentPlayer }) {
+            winner = currentPlayer
+            phase = .gameOver
+        }
+        
+        return result
+    }
+    
+    /// Get all connected territories in a continent owned by a faction
+    /// Uses BFS to find all territories that are adjacent to each other
+    private func getConnectedRegion(from startID: Int, continent: String, faction: Faction) -> [Int] {
+        var visited = Set<Int>()
+        var queue = [startID]
+        var region: [Int] = []
+        
+        while !queue.isEmpty {
+            let current = queue.removeFirst()
+            
+            if visited.contains(current) {
+                continue
+            }
+            
+            // Check if this territory matches our criteria
+            guard owner[current] == faction && defs[current].continent == continent else {
+                continue
+            }
+            
+            visited.insert(current)
+            region.append(current)
+            
+            // Add adjacent territories to queue
+            for adj in adjacency[current] {
+                if !visited.contains(adj) && owner[adj] == faction && defs[adj].continent == continent {
+                    queue.append(adj)
+                }
+            }
+        }
+        
+        return region
+    }
+    
+    /// Distribute attack losses proportionally across attacking territories
+    private func distributeAttackLosses(attackingRegion: [Int], attackingPower: [Int: Int], totalLosses: Int) {
+        guard totalLosses > 0 else { return }
+        
+        let totalPower = attackingPower.values.reduce(0, +)
+        guard totalPower > 0 else { return }
+        
+        var remainingLosses = totalLosses
+        
+        // Distribute losses proportionally
+        for tid in attackingRegion {
+            let power = attackingPower[tid] ?? 0
+            let proportion = Double(power) / Double(totalPower)
+            let losses = min(Int(Double(totalLosses) * proportion), power)
+            
+            troops[tid] -= losses
+            remainingLosses -= losses
+        }
+        
+        // Distribute any remaining losses (due to rounding) to territories with troops
+        while remainingLosses > 0 {
+            for tid in attackingRegion where troops[tid] > 1 && remainingLosses > 0 {
+                troops[tid] -= 1
+                remainingLosses -= 1
+            }
+            // Safety: if no territory can lose more troops, break
+            if attackingRegion.allSatisfy({ troops[$0] <= 1 }) {
+                break
+            }
+        }
     }
 
     // MARK: - AI Logic

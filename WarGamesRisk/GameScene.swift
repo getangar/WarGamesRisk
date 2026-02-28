@@ -29,7 +29,11 @@ class GameScene: SKScene {
     private var warsawCountLabel: SKLabelNode!
     private var namCountLabel: SKLabelNode!
     private var instructionLabel: SKLabelNode!
+    private var specialAttackLabel: SKLabelNode!
     private var logLabels: [SKLabelNode] = []
+    
+    // Special Attack state
+    private var specialAttackMode = false
 
     // AI timing
     private var aiActionTimer: TimeInterval = 0
@@ -150,6 +154,17 @@ class GameScene: SKScene {
                 mapLayer.addChild(line)
             }
         }
+        
+        // Add visual connection line from Scandinavia (14) through Ukraine (19) to fill the gap
+        // This helps visualize the connected Warsaw Pact territories
+        let scandinavia = mapToScreen(CGPoint(x: model.defs[14].x, y: model.defs[14].y))
+        let ukraine = mapToScreen(CGPoint(x: model.defs[19].x, y: model.defs[19].y))
+        if model.owner[14] == model.owner[19] {
+            let connLine = lineBetween(scandinavia, ukraine, color: model.owner[14].color.withAlphaComponent(0.25), width: 1.0)
+            connLine.zPosition = 2.5
+            connLine.strokeColor = model.owner[14].color.withAlphaComponent(0.15)
+            mapLayer.addChild(connLine)
+        }
 
         // Draw territory markers
         territoryNodes = []
@@ -222,6 +237,10 @@ class GameScene: SKScene {
         // Info label (reinforcements, dice results)
         infoLabel = makeHUDLabel(x: size.width / 2, y: WG.mapY + WG.mapH + 20, text: "", color: WG.textAmber, size: 14)
         infoLabel.horizontalAlignmentMode = .center
+        
+        // Special Attack availability indicator
+        specialAttackLabel = makeHUDLabel(x: size.width / 2, y: WG.mapY + WG.mapH + 40, text: "", color: WG.textRed, size: 12)
+        specialAttackLabel.horizontalAlignmentMode = .center
 
         // Log area (left side, above bottom bar, fully visible)
         for i in 0..<5 {
@@ -273,14 +292,33 @@ class GameScene: SKScene {
             phaseLabel.fontColor = WG.textRed
             if isHumanTurn {
                 if selectedTerritory == nil {
-                    instructionLabel.text = "SELECT YOUR TERRITORY TO ATTACK FROM  |  PRESS SPACE TO END ATTACK"
+                    instructionLabel.text = "SELECT YOUR TERRITORY TO ATTACK FROM  |  PRESS SPACE TO END ATTACK  |  M FOR MASSIVE STRIKE"
                 } else {
-                    instructionLabel.text = "SELECT ENEMY TERRITORY TO ATTACK  |  ESC TO DESELECT  |  SPACE TO END ATTACK"
+                    if specialAttackMode {
+                        instructionLabel.text = "⚡ MASSIVE STRIKE MODE ⚡  SELECT ADJACENT ENEMY  |  ESC TO CANCEL"
+                    } else {
+                        instructionLabel.text = "SELECT ENEMY TERRITORY TO ATTACK  |  ESC TO DESELECT  |  SPACE TO END ATTACK"
+                    }
                 }
             } else {
                 instructionLabel.text = "\(playerName) IS LAUNCHING STRIKES..."
             }
             infoLabel.text = ""
+            
+            // Show special attack availability
+            let specialCount = model.specialAttacksAvailable[model.currentPlayer] ?? 0
+            if isHumanTurn && specialCount > 0 {
+                specialAttackLabel.text = "⚡ MASSIVE STRIKE AVAILABLE (\(specialCount)) - PRESS M"
+                specialAttackLabel.fontColor = WG.textRed
+                specialAttackLabel.run(.repeatForever(.sequence([
+                    .fadeAlpha(to: 0.5, duration: 0.5),
+                    .fadeAlpha(to: 1.0, duration: 0.5)
+                ])))
+            } else {
+                specialAttackLabel.text = ""
+                specialAttackLabel.removeAllActions()
+                specialAttackLabel.alpha = 1.0
+            }
         case .fortify:
             phaseLabel.text = "\(playerName) - FORTIFY"
             phaseLabel.fontColor = WG.textCyan
@@ -363,19 +401,34 @@ class GameScene: SKScene {
         guard !isAnimating else { return }
 
         switch event.keyCode {
+        case 46: // M - Toggle Massive Strike mode
+            if model.currentPlayer == humanFaction && model.phase == .attack {
+                let available = model.specialAttacksAvailable[humanFaction] ?? 0
+                if available > 0 {
+                    specialAttackMode.toggle()
+                    if specialAttackMode {
+                        addLog("⚡ MASSIVE STRIKE MODE ACTIVATED ⚡", color: WG.textRed)
+                    } else {
+                        addLog("Normal attack mode", color: WG.textGreen)
+                    }
+                    refreshDisplay()
+                }
+            }
         case 49: // Space - end phase
             if model.currentPlayer == humanFaction {
                 if model.phase == .attack {
                     model.endAttackPhase()
                     selectedTerritory = nil
+                    specialAttackMode = false
                     refreshDisplay()
                 } else if model.phase == .fortify {
                     endHumanTurn()
                 }
             }
         case 53: // ESC - deselect or go to menu
-            if selectedTerritory != nil {
+            if selectedTerritory != nil || specialAttackMode {
                 selectedTerritory = nil
+                specialAttackMode = false
                 refreshDisplay()
             } else {
                 let menu = MenuScene(size: size)
@@ -412,14 +465,24 @@ class GameScene: SKScene {
         } else {
             // Select target
             let from = selectedTerritory!
-            if tid == from { selectedTerritory = nil; refreshDisplay(); return }
+            if tid == from { selectedTerritory = nil; specialAttackMode = false; refreshDisplay(); return }
 
-            if model.canAttack(from: from, to: tid) {
-                executeAttack(from: from, to: tid)
-            } else if model.owner[tid] == humanFaction {
-                // Switch selection to this territory
-                selectedTerritory = tid
-                refreshDisplay()
+            if specialAttackMode {
+                // Execute Massive Strike
+                if model.canSpecialAttack(from: from, to: tid) {
+                    executeSpecialAttack(from: from, to: tid)
+                } else if model.owner[tid] == humanFaction {
+                    selectedTerritory = tid
+                    refreshDisplay()
+                }
+            } else {
+                // Normal attack
+                if model.canAttack(from: from, to: tid) {
+                    executeAttack(from: from, to: tid)
+                } else if model.owner[tid] == humanFaction {
+                    selectedTerritory = tid
+                    refreshDisplay()
+                }
             }
         }
     }
@@ -491,6 +554,126 @@ class GameScene: SKScene {
                 self.isAnimating = false
             }
         }
+    }
+    
+    // MARK: - Special Attack (Massive Strike)
+    
+    private func executeSpecialAttack(from: Int, to: Int) {
+        isAnimating = true
+        selectedTerritory = nil
+        specialAttackMode = false
+
+        addLog("⚡⚡⚡ REGIONAL MASSIVE STRIKE LAUNCHED ⚡⚡⚡", color: WG.textRed)
+
+        // Get all attacking and defending regions using the same logic as GameModel
+        let attackingContinent = model.defs[from].continent
+        let attackingRegion = getConnectedRegionForVisuals(from: from, continent: attackingContinent, faction: model.currentPlayer)
+        
+        let defendingContinent = model.defs[to].continent
+        let defendingRegion = getConnectedRegionForVisuals(from: to, continent: defendingContinent, faction: model.owner[to])
+        
+        addLog("⚡ \(attackingRegion.count) territories strike \(defendingRegion.count) targets!", color: WG.textAmber)
+        
+        // Calculate total missiles: each attacking territory launches 1 missile to each defending territory
+        let totalMissiles = attackingRegion.count * defendingRegion.count
+        var completedMissiles = 0
+        
+        // Launch missiles from ALL attacking territories to ALL defending territories
+        var missileIndex = 0
+        for attackerID in attackingRegion {
+            let attackerPos = mapToScreen(CGPoint(x: model.defs[attackerID].x, y: model.defs[attackerID].y))
+            
+            for defenderID in defendingRegion {
+                let defenderPos = mapToScreen(CGPoint(x: model.defs[defenderID].x, y: model.defs[defenderID].y))
+                
+                // Stagger missile launches slightly for visual effect
+                let delay = Double(missileIndex) * 0.08
+                missileIndex += 1
+                
+                run(.wait(forDuration: delay)) { [weak self] in
+                    guard let self = self else { return }
+                    
+                    self.animateMissile(from: attackerPos, to: defenderPos, color: self.model.currentPlayer.color) {
+                        completedMissiles += 1
+                        
+                        // After ALL missiles complete, resolve combat
+                        if completedMissiles == totalMissiles {
+                            if let result = self.model.specialAttack(from: from, to: to) {
+                                // Multiple impacts on all defending territories
+                                for defenderID in defendingRegion {
+                                    let defPos = self.mapToScreen(CGPoint(x: self.model.defs[defenderID].x, y: self.model.defs[defenderID].y))
+                                    for j in 0..<2 {
+                                        self.run(.wait(forDuration: Double(j) * 0.15)) {
+                                            self.animateImpact(at: defPos)
+                                        }
+                                    }
+                                }
+                                
+                                let regionName = attackingContinent
+                                let targetRegion = defendingContinent
+                                
+                                self.addLog("⚡ \(regionName) STRIKES \(targetRegion)!", color: self.model.currentPlayer.color)
+                                self.addLog("TOTAL LOSSES: ATK-\(result.attackLoss) DEF-\(result.defendLoss)", color: WG.textAmber)
+                                
+                                // Flash all conquered territories
+                                for defenderID in defendingRegion {
+                                    if self.model.owner[defenderID] == self.model.currentPlayer {
+                                        self.flashTerritory(defenderID, color: self.model.currentPlayer.bright)
+                                        
+                                        self.run(.wait(forDuration: 0.3)) {
+                                            self.flashTerritory(defenderID, color: WG.impactFlash)
+                                        }
+                                    }
+                                }
+
+                                if self.model.phase == .gameOver {
+                                    self.refreshDisplay()
+                                    self.showGameOverAnimation()
+                                    self.isAnimating = false
+                                    return
+                                }
+                            }
+                            
+                            self.refreshDisplay()
+                            self.run(.wait(forDuration: 1.0)) {
+                                self.isAnimating = false
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    /// Get all connected territories in a continent owned by a faction (for visuals)
+    /// Mirrors the GameModel logic
+    private func getConnectedRegionForVisuals(from startID: Int, continent: String, faction: Faction) -> [Int] {
+        var visited = Set<Int>()
+        var queue = [startID]
+        var region: [Int] = []
+        
+        while !queue.isEmpty {
+            let current = queue.removeFirst()
+            
+            if visited.contains(current) {
+                continue
+            }
+            
+            guard model.owner[current] == faction && model.defs[current].continent == continent else {
+                continue
+            }
+            
+            visited.insert(current)
+            region.append(current)
+            
+            for adj in model.adjacency[current] {
+                if !visited.contains(adj) && model.owner[adj] == faction && model.defs[adj].continent == continent {
+                    queue.append(adj)
+                }
+            }
+        }
+        
+        return region
     }
 
     // MARK: - Missile Trail Animation (the iconic WarGames arc)
