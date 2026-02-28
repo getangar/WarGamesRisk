@@ -38,21 +38,6 @@ Standard Risk rules:
 
 **Continent bonuses**: N.America +5, S.America +2, Europe +5, Africa +3, Asia +7, Australia +2
 
-## 🚀 Setup
-
-### Option A: xcodegen
-```bash
-brew install xcodegen
-xcodegen generate
-open WarGamesRisk.xcodeproj
-# ⌘R to run
-```
-
-### Option B: Manual Xcode project
-1. New macOS App → SwiftUI → Swift → macOS 14+
-2. Drag all .swift files from WarGamesRisk/ into the project
-3. ⌘R
-
 ## 📋 Requirements
 
 - macOS 14.0+ (Sonoma)
