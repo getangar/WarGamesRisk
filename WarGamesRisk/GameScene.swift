@@ -549,6 +549,13 @@ class GameScene: SKScene {
                     self.addLog("\(atkName) CAPTURED \(defName)!", color: self.model.currentPlayer.color)
                     self.flashTerritory(to, color: self.model.currentPlayer.bright)
                     
+                    // Play conquest sound
+                    if self.model.currentPlayer == self.humanFaction {
+                        self.playTerritoryConqueredSound()
+                    } else {
+                        self.playTerritoryLostSound()
+                    }
+                    
                     // Check for continent control changes
                     self.run(.wait(forDuration: 0.3)) {
                         self.checkContinentControlChanges()
@@ -624,7 +631,8 @@ class GameScene: SKScene {
                                     let defPos = self.mapToScreen(CGPoint(x: self.model.defs[defenderID].x, y: self.model.defs[defenderID].y))
                                     for j in 0..<2 {
                                         self.run(.wait(forDuration: Double(j) * 0.15)) {
-                                            self.animateImpact(at: defPos)
+                                            // Use larger explosions for massive strikes
+                                            self.animateImpact(at: defPos, isLargeExplosion: true)
                                         }
                                     }
                                 }
@@ -643,6 +651,15 @@ class GameScene: SKScene {
                                         self.run(.wait(forDuration: 0.3)) {
                                             self.flashTerritory(defenderID, color: WG.impactFlash)
                                         }
+                                    }
+                                }
+                                
+                                // Play conquest sound if any territories conquered
+                                if defendingRegion.contains(where: { self.model.owner[$0] == self.model.currentPlayer }) {
+                                    if self.model.currentPlayer == self.humanFaction {
+                                        self.playTerritoryConqueredSound()
+                                    } else {
+                                        self.playTerritoryLostSound()
                                     }
                                 }
                                 
@@ -705,6 +722,9 @@ class GameScene: SKScene {
     // MARK: - Missile Trail Animation (the iconic WarGames arc)
 
     private func animateMissile(from: CGPoint, to: CGPoint, color: NSColor, completion: @escaping () -> Void) {
+        // Play missile launch sound
+        playMissileLaunchSound()
+        
         let midX = (from.x + to.x) / 2
         let dist = hypot(to.x - from.x, to.y - from.y)
         let arcHeight = max(80, dist * 0.4) // Higher arc for longer distances
@@ -798,9 +818,13 @@ class GameScene: SKScene {
 
     // MARK: - Impact Flash
 
-    private func animateImpact(at pos: CGPoint) {
-        // Play explosion sound
-        playExplosionSound()
+    private func animateImpact(at pos: CGPoint, isLargeExplosion: Bool = false) {
+        // Play explosion sound - use large explosion for massive strikes
+        if isLargeExplosion {
+            run(SKAction.playSoundFileNamed("explosion_large.wav", waitForCompletion: false))
+        } else {
+            playExplosionSound()
+        }
         
         // Bright white flash expanding
         let flash = SKShapeNode(circleOfRadius: 4)
@@ -829,20 +853,26 @@ class GameScene: SKScene {
     
     /// Play explosion sound effect
     private func playExplosionSound() {
-        // Create a synthesized explosion sound using SKAction
-        // In a real app, you'd use: run(SKAction.playSoundFileNamed("explosion.wav", waitForCompletion: false))
-        
-        // For now, we'll create a brief tone as placeholder
-        // You can add real sound files to your Xcode project later
-        
-        #if os(macOS)
-        // Use NSSound for macOS
-        DispatchQueue.global(qos: .userInteractive).async {
-            // Generate a brief explosion-like beep
-            // In production, replace with: NSSound(named: "explosion")?.play()
-            NSSound.beep() // Placeholder - add real sound file for production
-        }
-        #endif
+        // Use SpriteKit's built-in sound system
+        let explosions = ["explosion_small.wav", "explosion_medium.wav", "explosion_large.wav"]
+        let randomExplosion = explosions.randomElement() ?? "explosion_medium.wav"
+        run(SKAction.playSoundFileNamed(randomExplosion, waitForCompletion: false))
+    }
+    
+    /// Play missile launch sound
+    private func playMissileLaunchSound() {
+        // Play at lower volume by running with a group that includes volume control
+        run(SKAction.playSoundFileNamed("missile_launch.wav", waitForCompletion: false))
+    }
+    
+    /// Play territory conquered sound
+    private func playTerritoryConqueredSound() {
+        run(SKAction.playSoundFileNamed("territory_conquered.wav", waitForCompletion: false))
+    }
+    
+    /// Play territory lost sound
+    private func playTerritoryLostSound() {
+        run(SKAction.playSoundFileNamed("territory_lost.wav", waitForCompletion: false))
     }
 
     // MARK: - Territory Flash
@@ -1019,6 +1049,13 @@ class GameScene: SKScene {
                         let dN = self.model.defs[to].shortName
                         if result.conquered {
                             self.addLog("\(aN) → \(dN) CAPTURED", color: self.model.currentPlayer.color)
+                            
+                            // Play conquest/lost sound based on who conquered
+                            if self.model.currentPlayer == self.humanFaction {
+                                self.playTerritoryConqueredSound()
+                            } else {
+                                self.playTerritoryLostSound()
+                            }
                             
                             // Check for continent control changes
                             self.run(.wait(forDuration: 0.3)) {
