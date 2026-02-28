@@ -1,6 +1,11 @@
 // WarGamesApp.swift
-// WarGames Risk - A turn-based Risk game with NORAD War Room aesthetics
-// "Shall we play a game?"
+//
+//  WarGamesApp.swift
+//  WarGamesRisk
+//
+//  Created by Gennaro Eduardo Tangari on 28/02/2026.
+//  Copyright © 2026 Gennaro Eduardo Tangari. All rights reserved.
+//
 
 import SwiftUI
 import SpriteKit

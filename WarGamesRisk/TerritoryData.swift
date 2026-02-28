@@ -1,6 +1,11 @@
 // TerritoryData.swift
-// High-detail world map coastlines + 42 Risk territories
-// Mercator projection: x 0..1 = 170°W→180°E, y 0..1 = 60°S→85°N
+//
+//  TerritoryData.swift
+//  WarGamesRisk
+//
+//  Created by Gennaro Eduardo Tangari on 28/02/2026.
+//  Copyright © 2026 Gennaro Eduardo Tangari. All rights reserved.
+//
 
 import SpriteKit
 

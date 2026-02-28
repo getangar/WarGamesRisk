@@ -1,5 +1,11 @@
 // MenuScene.swift
-// WarGames WOPR terminal intro and faction selection
+//
+//  MenuScene.swift
+//  WarGamesRisk
+//
+//  Created by Gennaro Eduardo Tangari on 28/02/2026.
+//  Copyright © 2026 Gennaro Eduardo Tangari. All rights reserved.
+//
 
 import SpriteKit
 import AVFoundation

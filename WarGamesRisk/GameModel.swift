@@ -1,5 +1,11 @@
 // GameModel.swift
-// Risk game logic: territory ownership, reinforcement, combat, and AI
+//
+//  GameModel.swift
+//  WarGamesRisk
+//
+//  Created by Gennaro Eduardo Tangari on 28/02/2026.
+//  Copyright © 2026 Gennaro Eduardo Tangari. All rights reserved.
+//
 
 import Foundation
 
