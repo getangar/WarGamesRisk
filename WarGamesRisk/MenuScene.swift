@@ -2,6 +2,7 @@
 // WarGames WOPR terminal intro and faction selection
 
 import SpriteKit
+import AVFoundation
 
 class MenuScene: SKScene {
 
@@ -10,6 +11,7 @@ class MenuScene: SKScene {
     private var charIndex = 0
     private var fullText = ""
     private var typeTimer: TimeInterval = 0
+    private let speechSynthesizer = AVSpeechSynthesizer()
 
     override func didMove(to view: SKView) {
         backgroundColor = WG.bgColor
@@ -39,7 +41,6 @@ class MenuScene: SKScene {
         // Phase 0: WOPR boot text
         let lines = [
             "LOGON: Joshua",
-            "WOPR ACTIVE",
             "",
             "GREETINGS, PROFESSOR FALKEN.",
             "",
@@ -51,6 +52,10 @@ class MenuScene: SKScene {
             let y = size.height * 0.72 - CGFloat(i) * 32
             run(.wait(forDuration: delay)) { [weak self] in
                 self?.addTerminalLine(text, y: y, color: WG.textGreen)
+                // Speak "Greetings, Professor Falken"
+                if text.contains("GREETINGS") {
+                    self?.speakText("Greetings, Professor Falken")
+                }
             }
             delay += text.isEmpty ? 0.3 : 0.6 + Double(text.count) * 0.03
         }
@@ -100,10 +105,11 @@ class MenuScene: SKScene {
     }
 
     private func showFactionChoice() {
-        let prompt = addTerminalLine("WHICH SIDE DO YOU WANT?", y: size.height * 0.20, color: WG.textCyan)
+        _ = addTerminalLine("WHICH SIDE DO YOU WANT?", y: size.height * 0.24, color: WG.textCyan)
 
-        let usaBtn = makeButton("UNITED STATES", y: size.height * 0.13, color: WG.usaColor, name: "btn_usa")
-        let ussrBtn = makeButton("SOVIET UNION", y: size.height * 0.06, color: WG.ussrColor, name: "btn_ussr")
+        _ = makeButton("NATO", y: size.height * 0.17, color: WG.usaColor, name: "btn_nato")
+        _ = makeButton("WARSAW PACT", y: size.height * 0.11, color: WG.ussrColor, name: "btn_warsaw")
+        _ = makeButton("NON-ALIGNED", y: size.height * 0.05, color: WG.nonAlignedColor, name: "btn_nam")
     }
 
     private func makeButton(_ text: String, y: CGFloat, color: NSColor, name: String) -> SKNode {
@@ -134,11 +140,14 @@ class MenuScene: SKScene {
         let nodes = self.nodes(at: loc)
 
         for node in nodes {
-            if node.name == "btn_usa" || node.parent?.name == "btn_usa" {
-                launchGame(faction: .usa); return
+            if node.name == "btn_nato" || node.parent?.name == "btn_nato" {
+                launchGame(faction: .nato); return
             }
-            if node.name == "btn_ussr" || node.parent?.name == "btn_ussr" {
-                launchGame(faction: .ussr); return
+            if node.name == "btn_warsaw" || node.parent?.name == "btn_warsaw" {
+                launchGame(faction: .warsaw); return
+            }
+            if node.name == "btn_nam" || node.parent?.name == "btn_nam" {
+                launchGame(faction: .nonAligned); return
             }
         }
     }
@@ -164,9 +173,21 @@ class MenuScene: SKScene {
 
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
-        case 18: launchGame(faction: .usa)  // '1'
-        case 19: launchGame(faction: .ussr) // '2'
+        case 18: launchGame(faction: .nato)  // '1'
+        case 19: launchGame(faction: .warsaw) // '2'
+        case 20: launchGame(faction: .nonAligned) // '3'
         default: break
         }
+    }
+    
+    // MARK: - Text to Speech
+    
+    private func speakText(_ text: String) {
+        let utterance = AVSpeechUtterance(string: text)
+        utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
+        utterance.rate = 0.35  // Slower, more computer-like
+        utterance.pitchMultiplier = 0.8  // Lower pitch for computer voice
+        utterance.volume = 0.7
+        speechSynthesizer.speak(utterance)
     }
 }

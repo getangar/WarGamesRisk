@@ -26,6 +26,11 @@ struct WG {
     static let ussrColor      = NSColor(red: 1.0, green: 0.15, blue: 0.1, alpha: 1)
     static let ussrGlow       = NSColor(red: 1.0, green: 0.2, blue: 0.1, alpha: 0.4)
     static let ussrBright     = NSColor(red: 1.0, green: 0.35, blue: 0.2, alpha: 1)
+    
+    // Non-Aligned colors (yellow/amber)
+    static let nonAlignedColor   = NSColor(red: 1.0, green: 0.8, blue: 0.0, alpha: 1)
+    static let nonAlignedGlow    = NSColor(red: 1.0, green: 0.85, blue: 0.2, alpha: 0.4)
+    static let nonAlignedBright  = NSColor(red: 1.0, green: 0.9, blue: 0.3, alpha: 1)
 
     // Neutral
     static let neutralColor   = NSColor(red: 0.3, green: 0.35, blue: 0.4, alpha: 1)
@@ -76,16 +81,50 @@ struct WG {
     }
 }
 
-enum Faction: Int {
-    case usa = 0
-    case ussr = 1
+enum Faction: Int, CaseIterable {
+    case nato = 0
+    case warsaw = 1
+    case nonAligned = 2
 
-    var name: String { self == .usa ? "UNITED STATES" : "SOVIET UNION" }
-    var shortName: String { self == .usa ? "USA" : "USSR" }
-    var color: NSColor { self == .usa ? WG.usaColor : WG.ussrColor }
-    var glow: NSColor { self == .usa ? WG.usaGlow : WG.ussrGlow }
-    var bright: NSColor { self == .usa ? WG.usaBright : WG.ussrBright }
-    var opponent: Faction { self == .usa ? .ussr : .usa }
+    var name: String {
+        switch self {
+        case .nato: return "NATO"
+        case .warsaw: return "WARSAW PACT"
+        case .nonAligned: return "NON-ALIGNED"
+        }
+    }
+    
+    var shortName: String {
+        switch self {
+        case .nato: return "NATO"
+        case .warsaw: return "USSR"
+        case .nonAligned: return "NAM"
+        }
+    }
+    
+    var color: NSColor {
+        switch self {
+        case .nato: return WG.usaColor
+        case .warsaw: return WG.ussrColor
+        case .nonAligned: return WG.nonAlignedColor
+        }
+    }
+    
+    var glow: NSColor {
+        switch self {
+        case .nato: return WG.usaGlow
+        case .warsaw: return WG.ussrGlow
+        case .nonAligned: return WG.nonAlignedGlow
+        }
+    }
+    
+    var bright: NSColor {
+        switch self {
+        case .nato: return WG.usaBright
+        case .warsaw: return WG.ussrBright
+        case .nonAligned: return WG.nonAlignedBright
+        }
+    }
 }
 
 enum GamePhase {

@@ -25,8 +25,9 @@ class GameScene: SKScene {
     private var phaseLabel: SKLabelNode!
     private var infoLabel: SKLabelNode!
     private var turnLabel: SKLabelNode!
-    private var usaCountLabel: SKLabelNode!
-    private var ussrCountLabel: SKLabelNode!
+    private var natoCountLabel: SKLabelNode!
+    private var warsawCountLabel: SKLabelNode!
+    private var namCountLabel: SKLabelNode!
     private var instructionLabel: SKLabelNode!
     private var logLabels: [SKLabelNode] = []
 
@@ -54,7 +55,7 @@ class GameScene: SKScene {
         refreshDisplay()
 
         // If AI goes first
-        if model.currentPlayer == model.aiFaction {
+        if model.currentPlayer != humanFaction {
             startAITurn()
         }
     }
@@ -136,7 +137,15 @@ class GameScene: SKScene {
                 let dist = hypot(to.x - from.x, to.y - from.y)
                 if dist > 500 { continue }
 
-                let line = lineBetween(from, to, color: WG.gridLine.withAlphaComponent(0.4), width: 0.5)
+                // Use faction color if both territories owned by same faction
+                let lineColor: NSColor
+                if model.owner[t.id] == model.owner[adjID] {
+                    lineColor = model.owner[t.id].color.withAlphaComponent(0.3)
+                } else {
+                    lineColor = WG.gridLine.withAlphaComponent(0.2)
+                }
+                
+                let line = lineBetween(from, to, color: lineColor, width: 0.5)
                 line.zPosition = 3
                 mapLayer.addChild(line)
             }
@@ -186,19 +195,20 @@ class GameScene: SKScene {
         hudLayer = SKNode(); hudLayer.zPosition = 100
         addChild(hudLayer)
 
-        // Top bar
-        let topBg = SKShapeNode(rectOf: CGSize(width: size.width - 20, height: 42), cornerRadius: 4)
+        // Top bar - taller to avoid overlap
+        let topBg = SKShapeNode(rectOf: CGSize(width: size.width - 20, height: 48), cornerRadius: 4)
         topBg.position = CGPoint(x: size.width / 2, y: size.height - 30)
         topBg.fillColor = NSColor.black.withAlphaComponent(0.7); topBg.strokeColor = WG.borderColor; topBg.lineWidth = 1
         hudLayer.addChild(topBg)
 
-        turnLabel = makeHUDLabel(x: 60, y: size.height - 30, text: "TURN 1", color: WG.textAmber, size: 16)
-        phaseLabel = makeHUDLabel(x: size.width / 2, y: size.height - 30, text: "REINFORCE", color: WG.textGreen, size: 18)
+        turnLabel = makeHUDLabel(x: 60, y: size.height - 30, text: "TURN 1", color: WG.textAmber, size: 14)
+        phaseLabel = makeHUDLabel(x: size.width / 2, y: size.height - 30, text: "REINFORCE", color: WG.textGreen, size: 15)
         phaseLabel.horizontalAlignmentMode = .center
 
-        // Player stats
-        usaCountLabel = makeHUDLabel(x: size.width - 300, y: size.height - 30, text: "USA: 21", color: WG.usaColor, size: 14)
-        ussrCountLabel = makeHUDLabel(x: size.width - 150, y: size.height - 30, text: "USSR: 21", color: WG.ussrColor, size: 14)
+        // Player stats - more compact, smaller font
+        natoCountLabel = makeHUDLabel(x: size.width - 540, y: size.height - 30, text: "NATO: 17T", color: WG.usaColor, size: 10)
+        warsawCountLabel = makeHUDLabel(x: size.width - 360, y: size.height - 30, text: "USSR: 14T", color: WG.ussrColor, size: 10)
+        namCountLabel = makeHUDLabel(x: size.width - 180, y: size.height - 30, text: "NAM: 11T", color: WG.nonAlignedColor, size: 10)
 
         // Bottom instruction bar
         let botBg = SKShapeNode(rectOf: CGSize(width: size.width - 20, height: 36), cornerRadius: 4)
@@ -213,10 +223,10 @@ class GameScene: SKScene {
         infoLabel = makeHUDLabel(x: size.width / 2, y: WG.mapY + WG.mapH + 20, text: "", color: WG.textAmber, size: 14)
         infoLabel.horizontalAlignmentMode = .center
 
-        // Log area (right side)
-        for i in 0..<6 {
-            let ll = makeHUDLabel(x: size.width - 250, y: WG.mapY + WG.mapH - 30 - CGFloat(i) * 18,
-                                  text: "", color: WG.textGreen, size: 11)
+        // Log area (left side, above bottom bar, fully visible)
+        for i in 0..<5 {
+            let ll = makeHUDLabel(x: 60, y: 60 + CGFloat(i) * 14,
+                                  text: "", color: WG.textGreen, size: 10)
             logLabels.append(ll)
         }
     }
@@ -295,8 +305,9 @@ class GameScene: SKScene {
             infoLabel.text = ""
         }
 
-        usaCountLabel.text = "USA: \(model.territoriesOwned(by: .usa)) TERR  \(model.totalTroops(for: .usa)) TRPS"
-        ussrCountLabel.text = "USSR: \(model.territoriesOwned(by: .ussr)) TERR  \(model.totalTroops(for: .ussr)) TRPS"
+        natoCountLabel.text = "NATO: \(model.territoriesOwned(by: .nato))T \(model.totalTroops(for: .nato))TR"
+        warsawCountLabel.text = "USSR: \(model.territoriesOwned(by: .warsaw))T \(model.totalTroops(for: .warsaw))TR"
+        namCountLabel.text = "NAM: \(model.territoriesOwned(by: .nonAligned))T \(model.totalTroops(for: .nonAligned))TR"
 
         // Highlight selection
         highlightRing?.removeFromParent()
@@ -623,7 +634,7 @@ class GameScene: SKScene {
         selectedTerritory = nil
         model.endTurn()
         refreshDisplay()
-        if model.currentPlayer == model.aiFaction {
+        if model.currentPlayer != humanFaction {
             startAITurn()
         }
     }
@@ -631,12 +642,12 @@ class GameScene: SKScene {
     private func startAITurn() {
         aiWaiting = true
         pendingAIActions = 0
-        addLog("--- \(model.aiFaction.shortName) TURN \(model.turnNumber) ---", color: model.aiFaction.color)
+        addLog("--- \(model.currentPlayer.shortName) TURN ---", color: model.currentPlayer.color)
         runNextAIAction()
     }
 
     private func runNextAIAction() {
-        guard model.currentPlayer == model.aiFaction, model.phase != .gameOver else {
+        guard model.currentPlayer != humanFaction, model.phase != .gameOver else {
             aiWaiting = false
             return
         }
@@ -655,7 +666,7 @@ class GameScene: SKScene {
             run(.wait(forDuration: delay)) { [weak self] in
                 guard let self = self else { return }
                 if self.model.placeReinforcement(at: tid) {
-                    self.flashTerritory(tid, color: self.model.aiFaction.bright)
+                    self.flashTerritory(tid, color: self.model.currentPlayer.bright)
                     self.refreshDisplay()
                 }
                 self.runNextAIAction()
@@ -670,13 +681,13 @@ class GameScene: SKScene {
                 let fromPos = self.mapToScreen(CGPoint(x: self.model.defs[from].x, y: self.model.defs[from].y))
                 let toPos = self.mapToScreen(CGPoint(x: self.model.defs[to].x, y: self.model.defs[to].y))
 
-                self.animateMissile(from: fromPos, to: toPos, color: self.model.aiFaction.color) {
+                self.animateMissile(from: fromPos, to: toPos, color: self.model.currentPlayer.color) {
                     if let result = self.model.attack(from: from, to: to) {
                         self.animateImpact(at: toPos)
                         let aN = self.model.defs[from].shortName
                         let dN = self.model.defs[to].shortName
                         if result.conquered {
-                            self.addLog("\(aN) → \(dN) CAPTURED", color: self.model.aiFaction.color)
+                            self.addLog("\(aN) → \(dN) CAPTURED", color: self.model.currentPlayer.color)
                         } else {
                             self.addLog("\(aN) → \(dN) A-\(result.attackLoss) D-\(result.defendLoss)", color: WG.textRed)
                         }
@@ -700,7 +711,7 @@ class GameScene: SKScene {
             run(.wait(forDuration: delay)) { [weak self] in
                 guard let self = self else { return }
                 if self.model.fortify(from: from, to: to, count: count) {
-                    self.addLog("MOVED \(count) → \(self.model.defs[to].shortName)", color: self.model.aiFaction.color)
+                    self.addLog("MOVED \(count) → \(self.model.defs[to].shortName)", color: self.model.currentPlayer.color)
                 }
                 self.finishAITurn()
             }
@@ -726,8 +737,15 @@ class GameScene: SKScene {
     private func finishAITurn() {
         aiWaiting = false
         model.endTurn()
-        addLog("--- YOUR TURN ---", color: humanFaction.color)
         refreshDisplay()
+        
+        // Check if next player is also AI
+        if model.currentPlayer != humanFaction {
+            addLog("--- \(model.currentPlayer.shortName) TURN ---", color: model.currentPlayer.color)
+            startAITurn()
+        } else {
+            addLog("--- YOUR TURN ---", color: humanFaction.color)
+        }
     }
 
     // MARK: - Game Over

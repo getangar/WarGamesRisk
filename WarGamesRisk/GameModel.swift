@@ -12,12 +12,13 @@ class GameModel {
 
     // Game state
     var humanFaction: Faction
-    var aiFaction: Faction
+    var aiFactions: [Faction]
     var currentPlayer: Faction
     var phase: GamePhase = .reinforce
     var reinforcements: Int = 0
     var turnNumber: Int = 1
     var winner: Faction? = nil
+    var activePlayers: [Faction] // Players still in the game
 
     // Combat log
     var lastAttackResult: AttackResult?
@@ -34,8 +35,9 @@ class GameModel {
 
     init(humanFaction: Faction) {
         self.humanFaction = humanFaction
-        self.aiFaction = humanFaction.opponent
-        self.currentPlayer = .usa  // USA always goes first
+        self.aiFactions = Faction.allCases.filter { $0 != humanFaction }
+        self.currentPlayer = .nato  // NATO always goes first
+        self.activePlayers = Faction.allCases
         self.defs = allTerritories
 
         // Adjacencies are correctly defined in TerritoryData
@@ -43,19 +45,56 @@ class GameModel {
 
         // Initialize territories
         let count = defs.count
-        owner = Array(repeating: .usa, count: count)
+        owner = Array(repeating: .nato, count: count)
         troops = Array(repeating: WG.initialTroopsPerTerritory, count: count)
 
-        // Distribute territories: alternate assignment, shuffled
-        var indices = Array(0..<count)
-        indices.shuffle()
-        for (i, idx) in indices.enumerated() {
-            owner[idx] = i % 2 == 0 ? .usa : .ussr
-            troops[idx] = Int.random(in: 2...4)
-        }
+        // Assign territories based on Cold War alliances
+        assignColdWarTerritories()
 
         // Calculate initial reinforcements
         reinforcements = calcReinforcements(for: currentPlayer)
+    }
+    
+    // MARK: - Cold War Territory Assignment
+    
+    private func assignColdWarTerritories() {
+        // NATO territories (North America, Western Europe, Australia, Japan)
+        let natoTerritories = [
+            0, 1, 2, 3, 4, 5, 6, 7, 8,  // All North America
+            13, 15, 16, 17,              // Iceland, Great Britain, Western Europe, Northern Europe
+            32,                          // Japan
+            38, 39, 40, 41               // Indonesia, New Guinea, W. Australia, E. Australia
+        ]
+        
+        // Warsaw Pact territories (Eastern Europe, Russia, Central Asia, China)
+        let warsawTerritories = [
+            14, 19,                      // Scandinavia, Ukraine
+            26, 27, 28, 29, 31, 37,     // Ural, Siberia, Yakutsk, Irkutsk, Mongolia, Kamchatka
+            30, 33, 34, 36               // Afghanistan, China, India (Soviet-aligned), Siam (Soviet influence)
+        ]
+        
+        // Non-Aligned territories (South America, Africa, Middle East, Southern Europe)
+        let nonAlignedTerritories = [
+            9, 10, 11, 12,               // All South America
+            18, 35,                      // Southern Europe, Middle East
+            20, 21, 22, 23, 24, 25      // All Africa
+        ]
+        
+        // Assign based on historical alliances
+        for tid in natoTerritories {
+            owner[tid] = .nato
+            troops[tid] = Int.random(in: 3...5)
+        }
+        
+        for tid in warsawTerritories {
+            owner[tid] = .warsaw
+            troops[tid] = Int.random(in: 3...5)
+        }
+        
+        for tid in nonAlignedTerritories {
+            owner[tid] = .nonAligned
+            troops[tid] = Int.random(in: 3...5)
+        }
     }
 
     // MARK: - Reinforcement Calculation
@@ -105,8 +144,8 @@ class GameModel {
         let atkCount = min(3, troops[from] - 1)
         let defCount = min(2, troops[to])
 
-        var atkDice = (0..<atkCount).map { _ in Int.random(in: 1...6) }.sorted(by: >)
-        var defDice = (0..<defCount).map { _ in Int.random(in: 1...6) }.sorted(by: >)
+        let atkDice = (0..<atkCount).map { _ in Int.random(in: 1...6) }.sorted(by: >)
+        let defDice = (0..<defCount).map { _ in Int.random(in: 1...6) }.sorted(by: >)
 
         var atkLoss = 0, defLoss = 0
         let comparisons = min(atkDice.count, defDice.count)
@@ -175,8 +214,16 @@ class GameModel {
     // MARK: - End Turn
 
     func endTurn() {
-        currentPlayer = currentPlayer.opponent
-        turnNumber += 1
+        // Move to next player
+        let currentIndex = activePlayers.firstIndex(of: currentPlayer) ?? 0
+        let nextIndex = (currentIndex + 1) % activePlayers.count
+        currentPlayer = activePlayers[nextIndex]
+        
+        // Increment turn when we cycle back to first player
+        if nextIndex == 0 {
+            turnNumber += 1
+        }
+        
         reinforcements = calcReinforcements(for: currentPlayer)
         phase = .reinforce
     }
@@ -203,23 +250,33 @@ class GameModel {
 
     private func aiReinforce() -> AIAction {
         // Place on territories that border enemies, prioritizing weakest borders
-        let myTerritories = (0..<defs.count).filter { owner[$0] == aiFaction }
+        let myTerritories = (0..<defs.count).filter { owner[$0] == currentPlayer }
+        
+        // Safety: if no territories, end turn
+        guard !myTerritories.isEmpty else {
+            return AIAction(kind: .endTurn)
+        }
+        
         let borderTerritories = myTerritories.filter { tid in
-            adjacency[tid].contains { owner[$0] != aiFaction }
+            adjacency[tid].contains { owner[$0] != currentPlayer }
         }
         if let target = borderTerritories.min(by: { troops[$0] < troops[$1] }) {
             return AIAction(kind: .reinforce(target))
         }
-        return AIAction(kind: .reinforce(myTerritories.randomElement() ?? 0))
+        // Fallback: any territory
+        if let target = myTerritories.randomElement() {
+            return AIAction(kind: .reinforce(target))
+        }
+        return AIAction(kind: .endTurn)
     }
 
     private func aiAttack() -> AIAction {
         // Find best attack: biggest advantage
         var bestFrom = -1, bestTo = -1, bestAdvantage = 0
 
-        let myTerritories = (0..<defs.count).filter { owner[$0] == aiFaction && troops[$0] >= WG.minAttackTroops }
+        let myTerritories = (0..<defs.count).filter { owner[$0] == currentPlayer && troops[$0] >= WG.minAttackTroops }
         for from in myTerritories {
-            for to in adjacency[from] where owner[to] != aiFaction {
+            for to in adjacency[from] where owner[to] != currentPlayer {
                 let advantage = troops[from] - troops[to]
                 if advantage > bestAdvantage {
                     bestAdvantage = advantage
@@ -238,12 +295,12 @@ class GameModel {
 
     private func aiFortify() -> AIAction {
         // Move troops from safe interiors to borders
-        let myTerritories = (0..<defs.count).filter { owner[$0] == aiFaction }
+        let myTerritories = (0..<defs.count).filter { owner[$0] == currentPlayer }
         let interiors = myTerritories.filter { tid in
-            adjacency[tid].allSatisfy { owner[$0] == aiFaction } && troops[tid] > 1
+            adjacency[tid].allSatisfy { owner[$0] == currentPlayer } && troops[tid] > 1
         }
         let borders = myTerritories.filter { tid in
-            adjacency[tid].contains { owner[$0] != aiFaction }
+            adjacency[tid].contains { owner[$0] != currentPlayer }
         }
 
         if let from = interiors.max(by: { troops[$0] < troops[$1] }),
