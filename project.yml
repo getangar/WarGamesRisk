@@ -1,0 +1,30 @@
+name: WarGamesRisk
+options:
+  bundleIdPrefix: com.wargames
+  deploymentTarget:
+    macOS: "14.0"
+  xcodeVersion: "15.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    PRODUCT_BUNDLE_IDENTIFIER: com.wargames.WarGamesRisk
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: 1
+    GENERATE_INFOPLIST_FILE: YES
+    INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.strategy-games"
+
+targets:
+  WarGamesRisk:
+    type: application
+    platform: macOS
+    sources:
+      - path: WarGamesRisk
+        type: group
+    settings:
+      base:
+        PRODUCT_NAME: "WarGames Risk"
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_ENTITLEMENTS: WarGamesRisk/WarGamesRisk.entitlements
