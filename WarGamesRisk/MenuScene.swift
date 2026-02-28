@@ -128,6 +128,36 @@ class MenuScene: SKScene {
         _ = makeButton("WARSAW PACT", x: centerX, y: centerY + buttonSpacing * 0.5, color: WG.ussrColor, name: "btn_warsaw")
         _ = makeButton("NON-ALIGNED", x: centerX, y: centerY - buttonSpacing * 0.5, color: WG.nonAlignedColor, name: "btn_nam")
         _ = makeButton("QUIT", x: centerX, y: centerY - buttonSpacing * 1.5, color: WG.textGreen.withAlphaComponent(0.8), name: "btn_quit")
+        
+        // Show credits immediately after buttons appear
+        addCreditsFooter()
+    }
+    
+    private func addCreditsFooter() {
+        // Credits text at bottom
+        let credits = SKLabelNode(fontNamed: WG.fontMono)
+        credits.text = "WarGames: Cold War Risk"
+        credits.fontSize = 16
+        credits.fontColor = WG.textGreen.withAlphaComponent(0.6)
+        credits.horizontalAlignmentMode = .center
+        credits.position = CGPoint(x: size.width / 2, y: size.height * 0.08)
+        credits.alpha = 0
+        credits.zPosition = 10
+        addChild(credits)
+        
+        let subtitle = SKLabelNode(fontNamed: WG.fontMono)
+        subtitle.text = "A game by Gennaro Eduardo Tangari • Inspired by the 1983 film WarGames"
+        subtitle.fontSize = 13
+        subtitle.fontColor = WG.textGreen.withAlphaComponent(0.5)
+        subtitle.horizontalAlignmentMode = .center
+        subtitle.position = CGPoint(x: size.width / 2, y: size.height * 0.05)
+        subtitle.alpha = 0
+        subtitle.zPosition = 10
+        addChild(subtitle)
+        
+        // Fade in credits
+        credits.run(.fadeIn(withDuration: 0.5))
+        subtitle.run(.sequence([.wait(forDuration: 0.2), .fadeIn(withDuration: 0.5)]))
     }
 
     private func makeButton(_ text: String, x: CGFloat, y: CGFloat, color: NSColor, name: String) -> SKNode {
@@ -205,6 +235,13 @@ class MenuScene: SKScene {
     // MARK: - Game Actions
     
     private func quitGame() {
+        // Semi-transparent black overlay for better visibility
+        let overlay = SKSpriteNode(color: .black, size: size)
+        overlay.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        overlay.alpha = 0
+        overlay.zPosition = 999
+        addChild(overlay)
+        
         // Terminal-style shutdown message
         let shutdownMsg = SKLabelNode(fontNamed: WG.fontMono)
         shutdownMsg.text = "SYSTEM SHUTDOWN INITIATED..."
@@ -215,9 +252,13 @@ class MenuScene: SKScene {
         shutdownMsg.zPosition = 1000
         addChild(shutdownMsg)
         
+        // Fade in overlay, then message, then fade out and quit
+        overlay.run(.fadeAlpha(to: 0.85, duration: 0.4))
+        
         shutdownMsg.run(.sequence([
+            .wait(forDuration: 0.2),
             .fadeIn(withDuration: 0.3),
-            .wait(forDuration: 0.5),
+            .wait(forDuration: 0.6),
             .fadeOut(withDuration: 0.3),
             .run {
                 NSApplication.shared.terminate(nil)
