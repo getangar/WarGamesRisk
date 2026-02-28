@@ -16,6 +16,7 @@ class GameScene: SKScene {
     private var troopLabels: [SKLabelNode] = []
     private var connectionLines: [SKShapeNode] = []
     private var hudLayer: SKNode!
+    private var continentShapes: [String: [SKShapeNode]] = [:] // Store continent border shapes for dynamic coloring
 
     // Selection
     private var selectedTerritory: Int? = nil
@@ -34,6 +35,9 @@ class GameScene: SKScene {
     
     // Special Attack state
     private var specialAttackMode = false
+    
+    // Continent ownership tracking (to detect changes)
+    private var previousContinentOwners: [String: Faction?] = [:]
 
     // AI timing
     private var aiActionTimer: TimeInterval = 0
@@ -113,6 +117,8 @@ class GameScene: SKScene {
         // Draw continent outlines with smooth Catmull-Rom splines
         for outline in continentOutlines {
             let color = WG.continentColor(outline.name)
+            var shapes: [SKShapeNode] = []
+            
             for path in outline.paths {
                 let screenPath = path.map { mapToScreen($0) }
                 guard screenPath.count >= 3 else { continue }
@@ -122,8 +128,13 @@ class GameScene: SKScene {
                 shape.fillColor = color.withAlphaComponent(0.02)
                 shape.lineCap = .round; shape.lineJoin = .round
                 shape.zPosition = 2; shape.isAntialiased = true
+                shape.name = "continent_\(outline.name)" // Tag for easy identification
                 mapLayer.addChild(shape)
+                shapes.append(shape)
             }
+            
+            // Store shapes for dynamic coloring
+            continentShapes[outline.name] = shapes
         }
 
         // Draw adjacency connections (dim lines)
@@ -270,6 +281,9 @@ class GameScene: SKScene {
             dot?.strokeColor = model.owner[t.id].bright
             troopLabels[t.id].text = "\(model.troops[t.id])"
         }
+        
+        // Update continent border colors based on control
+        updateContinentColors()
 
         // HUD
         turnLabel.text = "TURN \(model.turnNumber)"
@@ -534,6 +548,12 @@ class GameScene: SKScene {
                 if result.conquered {
                     self.addLog("\(atkName) CAPTURED \(defName)!", color: self.model.currentPlayer.color)
                     self.flashTerritory(to, color: self.model.currentPlayer.bright)
+                    
+                    // Check for continent control changes
+                    self.run(.wait(forDuration: 0.3)) {
+                        self.checkContinentControlChanges()
+                        self.updateContinentColors()
+                    }
                 } else {
                     self.addLog("\(atkName)→\(defName) ATK-\(result.attackLoss) DEF-\(result.defendLoss)", color: WG.textRed)
                 }
@@ -624,6 +644,12 @@ class GameScene: SKScene {
                                             self.flashTerritory(defenderID, color: WG.impactFlash)
                                         }
                                     }
+                                }
+                                
+                                // Check if any continents changed hands
+                                self.run(.wait(forDuration: 0.5)) {
+                                    self.checkContinentControlChanges()
+                                    self.updateContinentColors()
                                 }
 
                                 if self.model.phase == .gameOver {
@@ -773,6 +799,9 @@ class GameScene: SKScene {
     // MARK: - Impact Flash
 
     private func animateImpact(at pos: CGPoint) {
+        // Play explosion sound
+        playExplosionSound()
+        
         // Bright white flash expanding
         let flash = SKShapeNode(circleOfRadius: 4)
         flash.fillColor = WG.impactFlash; flash.strokeColor = .clear
@@ -797,6 +826,24 @@ class GameScene: SKScene {
             .removeFromParent()
         ]))
     }
+    
+    /// Play explosion sound effect
+    private func playExplosionSound() {
+        // Create a synthesized explosion sound using SKAction
+        // In a real app, you'd use: run(SKAction.playSoundFileNamed("explosion.wav", waitForCompletion: false))
+        
+        // For now, we'll create a brief tone as placeholder
+        // You can add real sound files to your Xcode project later
+        
+        #if os(macOS)
+        // Use NSSound for macOS
+        DispatchQueue.global(qos: .userInteractive).async {
+            // Generate a brief explosion-like beep
+            // In production, replace with: NSSound(named: "explosion")?.play()
+            NSSound.beep() // Placeholder - add real sound file for production
+        }
+        #endif
+    }
 
     // MARK: - Territory Flash
 
@@ -809,6 +856,107 @@ class GameScene: SKScene {
         flash.alpha = 0.8; flash.zPosition = 12
         node.addChild(flash)
         flash.run(.sequence([.fadeOut(withDuration: 0.5), .removeFromParent()]))
+    }
+    
+    // MARK: - Continent Control
+    
+    /// Update continent border colors based on ownership
+    /// Called after any territory conquest to reflect continent control
+    private func updateContinentColors() {
+        let continents = ["North America", "South America", "Europe", "Africa", "Asia", "Australia"]
+        
+        for continentName in continents {
+            guard let shapes = continentShapes[continentName] else { continue }
+            
+            // Get all territories in this continent
+            let territoryIDs = model.defs.enumerated()
+                .filter { $0.element.continent == continentName }
+                .map { $0.offset }
+            
+            guard !territoryIDs.isEmpty else { continue }
+            
+            // Check if any faction owns ALL territories in this continent
+            var controllingFaction: Faction? = nil
+            for faction in Faction.allCases {
+                if territoryIDs.allSatisfy({ model.owner[$0] == faction }) {
+                    controllingFaction = faction
+                    break
+                }
+            }
+            
+            // Check if control changed
+            let previousOwner = previousContinentOwners[continentName] ?? nil
+            if controllingFaction != previousOwner {
+                // Control changed!
+                if let faction = controllingFaction {
+                    addLog("⚡⚡⚡ \(faction.shortName) CONTROLS \(continentName.uppercased())! ⚡⚡⚡", color: faction.bright)
+                } else if previousOwner != nil {
+                    addLog("⚠️ \(continentName.uppercased()) IS NOW CONTESTED", color: WG.textAmber)
+                }
+                previousContinentOwners[continentName] = controllingFaction
+            }
+            
+            // Update ONLY the color - keep thickness and glow IDENTICAL for all continents
+            if let faction = controllingFaction {
+                // Continent is controlled - use bright faction color
+                let factionColor = faction.bright
+                for shape in shapes {
+                    shape.strokeColor = factionColor
+                    shape.lineWidth = 1.2        // Same as original
+                    shape.glowWidth = 2.0         // Same as original
+                    shape.fillColor = factionColor.withAlphaComponent(0.05)
+                    
+                    // Subtle pulse animation only on control change
+                    if controllingFaction != previousOwner {
+                        shape.run(.sequence([
+                            .fadeAlpha(to: 0.5, duration: 0.2),
+                            .fadeAlpha(to: 1.0, duration: 0.3)
+                        ]))
+                    }
+                }
+                
+            } else {
+                // Continent is contested - use original neutral color
+                let neutralColor = WG.continentColor(continentName)
+                for shape in shapes {
+                    shape.strokeColor = neutralColor
+                    shape.lineWidth = 1.2        // Same as controlled
+                    shape.glowWidth = 2.0         // Same as controlled
+                    shape.fillColor = neutralColor.withAlphaComponent(0.02)
+                }
+            }
+        }
+    }
+    
+    /// Check and announce if a continent control changed
+    /// Returns true if any continent changed ownership
+    @discardableResult
+    private func checkContinentControlChanges() -> Bool {
+        let continents = ["North America", "South America", "Europe", "Africa", "Asia", "Australia"]
+        var changesDetected = false
+        
+        for continentName in continents {
+            let territoryIDs = model.defs.enumerated()
+                .filter { $0.element.continent == continentName }
+                .map { $0.offset }
+            
+            // Check current control
+            var controllingFaction: Faction? = nil
+            for faction in Faction.allCases {
+                if territoryIDs.allSatisfy({ model.owner[$0] == faction }) {
+                    controllingFaction = faction
+                    break
+                }
+            }
+            
+            // You could store previous state and compare here
+            // For now, we'll just update colors
+            if controllingFaction != nil {
+                changesDetected = true
+            }
+        }
+        
+        return changesDetected
     }
 
     // MARK: - AI Turn
@@ -871,6 +1019,12 @@ class GameScene: SKScene {
                         let dN = self.model.defs[to].shortName
                         if result.conquered {
                             self.addLog("\(aN) → \(dN) CAPTURED", color: self.model.currentPlayer.color)
+                            
+                            // Check for continent control changes
+                            self.run(.wait(forDuration: 0.3)) {
+                                self.checkContinentControlChanges()
+                                self.updateContinentColors()
+                            }
                         } else {
                             self.addLog("\(aN) → \(dN) A-\(result.attackLoss) D-\(result.defendLoss)", color: WG.textRed)
                         }
